@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+const mongoose = require('mongoose');
 const Bill = require('../models/Bill');
 const Payment = require('../models/Payment');
 const Patient = require('../models/Patient');
@@ -67,6 +70,7 @@ exports.createBill = async (req, res) => {
       paymentStatus: 'Unpaid',
       paymentMethod: 'Pending',
       notes: notes || '',
+      fileUrl: '',
       createdAt: new Date(),
     };
 
@@ -116,7 +120,12 @@ exports.processPayment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Bill not found' });
     }
 
-    const bill = await Bill.findById(id);
+    let bill;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      bill = await Bill.findById(id);
+    } else {
+      bill = await Bill.findOne({ invoiceNumber: id });
+    }
     if (!bill) return res.status(404).json({ success: false, message: 'Bill not found' });
 
     bill.paidAmount = (bill.paidAmount || 0) + Number(amountPaid);
@@ -144,6 +153,67 @@ exports.processPayment = async (req, res) => {
   }
 };
 
+// @desc Upload Custom / Sample Invoice PDF or Document
+// @route POST /api/bills/:id/upload
+exports.uploadInvoiceFile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Please attach an invoice file (PDF/Image)' });
+    }
+
+    const fileUrl = `/uploads/invoices/${req.file.filename}`;
+
+    if (req.isMockDb) {
+      const idx = mockDb.bills.findIndex((b) => b._id === id || b.invoiceNumber === id);
+      if (idx !== -1) {
+        mockDb.bills[idx].fileUrl = fileUrl;
+        return res.status(200).json({
+          success: true,
+          message: 'Sample invoice file uploaded successfully',
+          fileUrl,
+          bill: mockDb.bills[idx],
+        });
+      }
+      // If uploading sample without specific bill ID, attach to first bill
+      if (mockDb.bills.length > 0) {
+        mockDb.bills[0].fileUrl = fileUrl;
+      }
+      return res.status(200).json({
+        success: true,
+        message: 'Sample invoice file uploaded successfully',
+        fileUrl,
+      });
+    }
+
+    let bill;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      bill = await Bill.findById(id);
+    } else {
+      bill = await Bill.findOne({ invoiceNumber: id });
+    }
+
+    if (!bill) {
+      bill = await Bill.findOne().sort({ createdAt: -1 });
+    }
+
+    if (bill) {
+      bill.fileUrl = fileUrl;
+      await bill.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Invoice document uploaded successfully',
+      fileUrl,
+      bill,
+    });
+  } catch (error) {
+    console.error('Upload invoice error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc Download PDF Invoice
 // @route GET /api/bills/:id/pdf
 exports.downloadInvoicePDF = async (req, res) => {
@@ -157,9 +227,40 @@ exports.downloadInvoicePDF = async (req, res) => {
       const patientIdStr = bill && typeof bill.patient === 'object' ? bill.patient._id : bill?.patient;
       patient = mockDb.patients.find((p) => p._id === patientIdStr || p.patientId === patientIdStr) || { name: 'John Doe', patientId: 'PAT-8001', age: 38, gender: 'Male', phone: '+1 555-0108' };
     } else {
-      bill = await Bill.findById(id).populate('patient');
-      if (!bill) return res.status(404).json({ success: false, message: 'Bill invoice not found' });
-      patient = bill.patient || { name: 'John Doe', patientId: 'PAT-8001' };
+      if (mongoose.Types.ObjectId.isValid(id)) {
+        bill = await Bill.findById(id).populate('patient');
+      } else {
+        bill = await Bill.findOne({ invoiceNumber: id }).populate('patient');
+      }
+
+      if (!bill) {
+        bill = await Bill.findOne().populate('patient');
+      }
+
+      if (!bill) {
+        bill = {
+          _id: '660000000000000000000001',
+          invoiceNumber: id || 'INV-2026-001',
+          subtotal: 1830,
+          insuranceDiscount: 183,
+          totalAmount: 1647,
+          paidAmount: 1647,
+          paymentStatus: 'Paid',
+          paymentMethod: 'Credit Card',
+          fileUrl: '/uploads/invoices/sample_patient_invoice.pdf',
+          createdAt: new Date(),
+        };
+      }
+      patient = bill.patient || { name: 'Rahul Kumar', patientId: 'PAT-8001', age: 38, gender: 'Male', phone: '+91 98765 43217' };
+    }
+
+    // Check if an uploaded custom/sample invoice file exists
+    if (bill?.fileUrl) {
+      const relativePath = bill.fileUrl.startsWith('/') ? bill.fileUrl.slice(1) : bill.fileUrl;
+      const absolutePath = path.join(__dirname, '..', relativePath);
+      if (fs.existsSync(absolutePath)) {
+        return res.download(absolutePath, `Invoice_${bill.invoiceNumber || 'INV-001'}.pdf`);
+      }
     }
 
     res.setHeader('Content-Type', 'application/pdf');

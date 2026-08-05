@@ -5,7 +5,7 @@ import DataTable from '../../components/DataTable';
 import Modal from '../../components/Modal';
 import API, { downloadPdfBlob } from '../../services/api';
 import { NotificationContext } from '../../context/NotificationContext';
-import { Download, Plus, Edit3, Trash2 } from 'lucide-react';
+import { Download, Plus, Edit3, Trash2, Upload, FileCheck } from 'lucide-react';
 
 const BillingPayments = () => {
   const { addToast } = useContext(NotificationContext);
@@ -13,7 +13,11 @@ const BillingPayments = () => {
   const [bills, setBills] = useState([]);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
+  const [targetBillId, setTargetBillId] = useState('');
+  const [uploadFile, setUploadFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const [form, setForm] = useState({
     subtotal: '1000',
@@ -45,6 +49,37 @@ const BillingPayments = () => {
 
   const downloadInvoice = (billId, invNum) => {
     downloadPdfBlob(`/bills/${billId}/pdf`, `Invoice_${invNum || 'INV-001'}.pdf`);
+  };
+
+  const handleUploadSampleInvoice = async (e) => {
+    e.preventDefault();
+    if (!uploadFile) {
+      addToast('Please select a PDF or image file to upload', 'warning');
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      const formData = new FormData();
+      formData.append('invoiceFile', uploadFile);
+
+      const billId = targetBillId || (bills[0]?._id || 'sample');
+      const res = await API.post(`/bills/${billId}/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      if (res.data.success) {
+        addToast('Sample patient invoice uploaded successfully!', 'success');
+        setIsUploadOpen(false);
+        setUploadFile(null);
+        fetchBills();
+      }
+    } catch (err) {
+      console.error(err);
+      addToast(err.response?.data?.message || 'Invoice upload failed', 'danger');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleCreateBill = async (e) => {
@@ -133,13 +168,26 @@ const BillingPayments = () => {
       cell: (r) => (
         <div className="flex items-center gap-2">
           <button
-            onClick={() => downloadInvoice(r._id, r.invoiceNumber)}
+            onClick={() => downloadInvoice(r._id || r.invoiceNumber, r.invoiceNumber)}
             className="px-2.5 py-1 rounded-lg bg-medical-600 hover:bg-medical-700 text-white font-semibold text-xs flex items-center gap-1"
             title="Download PDF Receipt"
           >
             <Download className="w-3.5 h-3.5" />
             <span>PDF</span>
           </button>
+
+          <button
+            onClick={() => {
+              setTargetBillId(r._id || r.id);
+              setIsUploadOpen(true);
+            }}
+            className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 hover:bg-emerald-100 transition-colors text-xs font-semibold flex items-center gap-1"
+            title="Upload Sample / Custom Invoice Document"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload</span>
+          </button>
+
           <button
             onClick={() => handleOpenEdit(r)}
             className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 hover:bg-blue-100 transition-colors"
@@ -165,18 +213,31 @@ const BillingPayments = () => {
       <div className="flex-1 flex">
         <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
         <main className="flex-1 lg:ml-64 p-6 space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Billing, Payments & Invoicing Desk</h1>
               <p className="text-xs text-slate-500">Consolidated patient invoices, insurance deductions, cash/online transaction history</p>
             </div>
-            <button
-              onClick={() => setIsAddOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-medical-600 text-white font-bold text-xs shadow-md flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create New Invoice</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setTargetBillId(bills[0]?._id || '');
+                  setIsUploadOpen(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs shadow-md flex items-center gap-2"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Upload Sample Invoice</span>
+              </button>
+
+              <button
+                onClick={() => setIsAddOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-medical-600 hover:bg-medical-700 text-white font-bold text-xs shadow-md flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create New Invoice</span>
+              </button>
+            </div>
           </div>
 
           <DataTable title="All Hospital Invoices & Financial Receipts" columns={columns} data={bills} />
@@ -238,6 +299,55 @@ const BillingPayments = () => {
 
           <button type="submit" className="w-full py-2.5 rounded-xl bg-medical-600 text-white font-bold text-xs shadow-md">
             Generate Patient Invoice
+          </button>
+        </form>
+      </Modal>
+
+      {/* Upload Sample Invoice Modal */}
+      <Modal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} title="Upload Patient Invoice PDF / Document">
+        <form onSubmit={handleUploadSampleInvoice} className="space-y-4">
+          <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs">
+            <p className="font-semibold mb-1 flex items-center gap-1">
+              <FileCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              Upload Custom or Sample Invoice
+            </p>
+            <p>Upload a sample invoice document to attach to patient billing records for instant download in patient portal.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold mb-1">Target Patient Invoice</label>
+            <select
+              value={targetBillId}
+              onChange={(e) => setTargetBillId(e.target.value)}
+              className="w-full p-2.5 text-xs rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+            >
+              <option value="">-- Select Invoice --</option>
+              {bills.map((b) => (
+                <option key={b._id} value={b._id}>
+                  {b.invoiceNumber} - {b.patient?.name || 'Rahul Kumar'} (₹{b.totalAmount})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold mb-1">Invoice File (PDF, PNG, JPG)</label>
+            <input
+              type="file"
+              required
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+              onChange={(e) => setUploadFile(e.target.files[0])}
+              className="w-full p-2 text-xs rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-medical-600 file:text-white"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={isUploading}
+            className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md flex items-center justify-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            <span>{isUploading ? 'Uploading Invoice...' : 'Upload & Save Invoice'}</span>
           </button>
         </form>
       </Modal>

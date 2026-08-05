@@ -321,6 +321,7 @@ const demoBills = [
     paymentStatus: 'Paid',
     paymentMethod: 'Credit Card',
     notes: 'Covered partly under Star Health Insurance.',
+    fileUrl: '/uploads/invoices/sample_patient_invoice.pdf',
     createdAt: new Date(),
   },
 ];
@@ -401,6 +402,11 @@ const autoSeedIfEmpty = async () => {
       console.log('[Auto-Seed]: MongoDB auto-seeding completed successfully! All 8 demo accounts created.');
     } else {
       console.log(`[MongoDB Ready]: Database connected with ${userCount} existing user accounts.`);
+      const billCount = await Bill.countDocuments();
+      if (billCount === 0) {
+        await Bill.insertMany(demoBills);
+        console.log('[Auto-Seed]: Seeded default patient bills into MongoDB.');
+      }
     }
   } catch (err) {
     console.warn(`[Auto-Seed Warning]: Auto-seeding skipped: ${err.message}`);
