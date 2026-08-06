@@ -40,6 +40,7 @@ app.use(
       if (!origin) return callback(null, true);
       const allowedOrigins = [
         process.env.CLIENT_URL,
+        'https://aura-care-hms.vercel.app',
         'http://localhost:5173',
         'http://localhost:3000',
         'http://localhost:5000',

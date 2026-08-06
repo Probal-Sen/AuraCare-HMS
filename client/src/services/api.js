@@ -7,15 +7,15 @@ const getApiBaseUrl = () => {
     return envUrl.replace(/\/$/, '');
   }
   if (typeof window !== 'undefined' && window.location) {
-    const { hostname, port, origin } = window.location;
+    const { hostname, port } = window.location;
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       if (port === '5173' || port === '3000') {
         return 'http://localhost:5000/api';
       }
     }
-    return `${origin}/api`;
   }
-  return '/api';
+  // Default live hosted Render backend URL
+  return 'https://auracare-hms.onrender.com/api';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
