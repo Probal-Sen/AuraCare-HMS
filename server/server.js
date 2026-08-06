@@ -13,6 +13,9 @@ const { autoSeedIfEmpty } = require('./utils/seedData');
 // Initialize express app
 const app = express();
 
+// Enable trust proxy for Render / Cloudflare / Vercel reverse proxies
+app.set('trust proxy', 1);
+
 // Database Connection state tracking
 let isDbConnected = false;
 connectDB().then(async (connected) => {
