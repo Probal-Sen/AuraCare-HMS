@@ -4,11 +4,15 @@ import Sidebar from '../../components/Sidebar';
 import DataTable from '../../components/DataTable';
 import Modal from '../../components/Modal';
 import API from '../../services/api';
+import { AuthContext } from '../../context/AuthContext';
 import { NotificationContext } from '../../context/NotificationContext';
 import { UserPlus, Edit3, Trash2 } from 'lucide-react';
 
 const PatientManagement = () => {
+  const { user } = useContext(AuthContext);
   const { addToast } = useContext(NotificationContext);
+  const isPatientRole = user?.role === 'Patient';
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [patients, setPatients] = useState([]);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -41,6 +45,9 @@ const PatientManagement = () => {
 
   useEffect(() => {
     fetchPatients();
+    const handleSync = () => fetchPatients();
+    window.addEventListener('auracare_data_updated', handleSync);
+    return () => window.removeEventListener('auracare_data_updated', handleSync);
   }, []);
 
   const fetchPatients = async () => {
@@ -54,11 +61,23 @@ const PatientManagement = () => {
 
   const handleCreatePatient = async (e) => {
     e.preventDefault();
+    if (isPatientRole) return;
     try {
       const res = await API.post('/patients', form);
       if (res.data.success) {
         addToast('Patient registered successfully!', 'success');
         setIsAddOpen(false);
+        setForm({
+          name: '',
+          age: '35',
+          gender: 'Male',
+          bloodGroup: 'O+',
+          phone: '',
+          email: '',
+          address: '',
+          admissionType: 'OPD',
+          roomNumber: 'N/A',
+        });
         fetchPatients();
       }
     } catch (err) {
@@ -66,24 +85,26 @@ const PatientManagement = () => {
     }
   };
 
-  const handleOpenEdit = (patient) => {
-    setEditingPatient(patient);
+  const handleOpenEdit = (p) => {
+    if (isPatientRole) return;
+    setEditingPatient(p);
     setEditForm({
-      name: patient.name || '',
-      age: patient.age || '',
-      gender: patient.gender || 'Male',
-      bloodGroup: patient.bloodGroup || 'O+',
-      phone: patient.phone || '',
-      email: patient.email || '',
-      address: patient.address || '',
-      admissionType: patient.admissionType || 'OPD',
-      roomNumber: patient.roomNumber || 'N/A',
+      name: p.name || '',
+      age: p.age || '',
+      gender: p.gender || 'Male',
+      bloodGroup: p.bloodGroup || 'O+',
+      phone: p.phone || '',
+      email: p.email || '',
+      address: p.address || '',
+      admissionType: p.admissionType || 'OPD',
+      roomNumber: p.roomNumber || 'N/A',
     });
     setIsEditOpen(true);
   };
 
   const handleUpdatePatient = async (e) => {
     e.preventDefault();
+    if (isPatientRole) return;
     try {
       const res = await API.put(`/patients/${editingPatient._id || editingPatient.id}`, editForm);
       if (res.data.success) {
@@ -97,6 +118,7 @@ const PatientManagement = () => {
   };
 
   const handleDeletePatient = async (patientId) => {
+    if (isPatientRole) return;
     if (!window.confirm('Are you sure you want to delete this patient record?')) return;
     try {
       const res = await API.delete(`/patients/${patientId}`);
@@ -109,7 +131,7 @@ const PatientManagement = () => {
     }
   };
 
-  const columns = [
+  const baseColumns = [
     { header: 'Patient ID', accessor: 'patientId' },
     { header: 'Name', accessor: 'name' },
     { header: 'Age / Gender', accessor: 'age', cell: (r) => `${r.age} yrs / ${r.gender}` },
@@ -117,29 +139,32 @@ const PatientManagement = () => {
     { header: 'Phone', accessor: 'phone' },
     { header: 'Admission Type', accessor: 'admissionType' },
     { header: 'Room Number', accessor: 'roomNumber' },
-    {
-      header: 'Actions',
-      accessor: 'actions',
-      cell: (r) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleOpenEdit(r)}
-            className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 hover:bg-blue-100 transition-colors"
-            title="Edit Patient Details"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => handleDeletePatient(r._id || r.id)}
-            className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 hover:bg-rose-100 transition-colors"
-            title="Delete Patient Record"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-    },
   ];
+
+  const actionColumn = {
+    header: 'Actions',
+    accessor: 'actions',
+    cell: (r) => (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => handleOpenEdit(r)}
+          className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 hover:bg-blue-100 transition-colors"
+          title="Edit Patient Details"
+        >
+          <Edit3 className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={() => handleDeletePatient(r._id || r.id)}
+          className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 hover:bg-rose-100 transition-colors"
+          title="Delete Patient Record"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    ),
+  };
+
+  const columns = isPatientRole ? baseColumns : [...baseColumns, actionColumn];
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
@@ -152,13 +177,15 @@ const PatientManagement = () => {
               <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Patient Records & Admission Control</h1>
               <p className="text-xs text-slate-500">Centralized patient database, demographics, emergency contact info, and admission tracking</p>
             </div>
-            <button
-              onClick={() => setIsAddOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-medical-600 hover:bg-medical-700 text-white font-bold text-xs shadow-md flex items-center gap-2"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>Register New Patient</span>
-            </button>
+            {!isPatientRole && (
+              <button
+                onClick={() => setIsAddOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-medical-600 hover:bg-medical-700 text-white font-bold text-xs shadow-md flex items-center gap-2"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Register New Patient</span>
+              </button>
+            )}
           </div>
 
           <DataTable title="All Registered Patients" columns={columns} data={patients} />

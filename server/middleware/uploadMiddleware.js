@@ -13,13 +13,17 @@ uploadDirs.forEach((dir) => {
 
 const storage = multer.diskStorage({
   destination(req, file, cb) {
+    let destSubfolder = 'uploads/reports';
     if (file.fieldname === 'avatar') {
-      cb(null, 'uploads/avatars/');
+      destSubfolder = 'uploads/avatars';
     } else if (file.fieldname === 'invoiceFile' || file.fieldname === 'invoice') {
-      cb(null, 'uploads/invoices/');
-    } else {
-      cb(null, 'uploads/reports/');
+      destSubfolder = 'uploads/invoices';
     }
+    const fullDest = path.join(__dirname, '..', destSubfolder);
+    if (!fs.existsSync(fullDest)) {
+      fs.mkdirSync(fullDest, { recursive: true });
+    }
+    cb(null, fullDest);
   },
   filename(req, file, cb) {
     const ext = path.extname(file.originalname);

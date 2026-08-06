@@ -4,11 +4,15 @@ import Sidebar from '../../components/Sidebar';
 import DataTable from '../../components/DataTable';
 import Modal from '../../components/Modal';
 import API from '../../services/api';
+import { AuthContext } from '../../context/AuthContext';
 import { NotificationContext } from '../../context/NotificationContext';
 import { Calendar, Plus, Edit3, Trash2 } from 'lucide-react';
 
 const AppointmentManagement = () => {
+  const { user } = useContext(AuthContext);
   const { addToast } = useContext(NotificationContext);
+  const isPatientRole = user?.role === 'Patient';
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [appointments, setAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
@@ -34,6 +38,9 @@ const AppointmentManagement = () => {
 
   useEffect(() => {
     fetchData();
+    const handleSync = () => fetchData();
+    window.addEventListener('auracare_data_updated', handleSync);
+    return () => window.removeEventListener('auracare_data_updated', handleSync);
   }, []);
 
   const fetchData = async () => {
@@ -54,7 +61,11 @@ const AppointmentManagement = () => {
   const handleBook = async (e) => {
     e.preventDefault();
     try {
-      const res = await API.post('/appointments', form);
+      const payload = { ...form };
+      if (isPatientRole && patients.length > 0) {
+        payload.patientId = patients[0]._id || patients[0].id || payload.patientId;
+      }
+      const res = await API.post('/appointments', payload);
       if (res.data.success) {
         addToast('Appointment booked successfully!', 'success');
         setIsBookModalOpen(false);
@@ -66,6 +77,7 @@ const AppointmentManagement = () => {
   };
 
   const handleOpenEdit = (apt) => {
+    if (isPatientRole) return;
     setEditingApt(apt);
     setEditForm({
       date: apt.date || '',
@@ -78,6 +90,7 @@ const AppointmentManagement = () => {
 
   const handleUpdateAppointment = async (e) => {
     e.preventDefault();
+    if (isPatientRole) return;
     try {
       const res = await API.put(`/appointments/${editingApt._id || editingApt.id}`, editForm);
       if (res.data.success) {
@@ -91,6 +104,7 @@ const AppointmentManagement = () => {
   };
 
   const handleDeleteAppointment = async (aptId) => {
+    if (isPatientRole) return;
     if (!window.confirm('Are you sure you want to cancel and delete this appointment?')) return;
     try {
       const res = await API.delete(`/appointments/${aptId}`);
@@ -103,7 +117,7 @@ const AppointmentManagement = () => {
     }
   };
 
-  const columns = [
+  const baseColumns = [
     { header: 'Appt ID', accessor: 'appointmentId' },
     { header: 'Patient Name', accessor: 'patient', cell: (r) => r.patient?.name || 'John Doe' },
     { header: 'Doctor Assigned', accessor: 'doctor', cell: (r) => r.doctor?.name || 'Dr. Sarah Jenkins' },
@@ -111,29 +125,32 @@ const AppointmentManagement = () => {
     { header: 'Time Slot', accessor: 'timeSlot' },
     { header: 'Reason', accessor: 'reason' },
     { header: 'Status', accessor: 'status', cell: (r) => <span className="font-bold text-xs text-medical-600">{r.status}</span> },
-    {
-      header: 'Actions',
-      accessor: 'actions',
-      cell: (r) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleOpenEdit(r)}
-            className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 hover:bg-blue-100 transition-colors"
-            title="Edit Appointment Details"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => handleDeleteAppointment(r._id || r.id)}
-            className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 hover:bg-rose-100 transition-colors"
-            title="Cancel & Delete Appointment"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-    },
   ];
+
+  const actionColumn = {
+    header: 'Actions',
+    accessor: 'actions',
+    cell: (r) => (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => handleOpenEdit(r)}
+          className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 hover:bg-blue-100 transition-colors"
+          title="Edit Appointment Details"
+        >
+          <Edit3 className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={() => handleDeleteAppointment(r._id || r.id)}
+          className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 hover:bg-rose-100 transition-colors"
+          title="Cancel & Delete Appointment"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    ),
+  };
+
+  const columns = isPatientRole ? baseColumns : [...baseColumns, actionColumn];
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">

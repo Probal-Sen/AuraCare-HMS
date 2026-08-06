@@ -1,14 +1,26 @@
+const mongoose = require('mongoose');
 const Patient = require('../models/Patient');
+const Doctor = require('../models/Doctor');
 const { mockDb } = require('../utils/seedData');
+const { resolveRef, getPatientIdForUser } = require('../utils/idHelper');
 
-// @desc Get all patients with search & filters
+// @desc Get all patients with search & filters (Scoped for Patient role)
 // @route GET /api/patients
 exports.getPatients = async (req, res) => {
   try {
     const { search, admissionType, bloodGroup } = req.query;
+    const isPatientRole = req.user && req.user.role === 'Patient';
+    let selfPatientId = null;
+
+    if (isPatientRole) {
+      selfPatientId = await getPatientIdForUser(req.user, req.isMockDb, mockDb);
+    }
 
     if (req.isMockDb) {
       let filtered = [...mockDb.patients];
+      if (isPatientRole && selfPatientId) {
+        filtered = filtered.filter((p) => p._id === selfPatientId || p.patientId === selfPatientId || p.email.toLowerCase() === req.user.email.toLowerCase());
+      }
       if (admissionType) filtered = filtered.filter((p) => p.admissionType === admissionType);
       if (bloodGroup) filtered = filtered.filter((p) => p.bloodGroup === bloodGroup);
       if (search) {
@@ -24,14 +36,18 @@ exports.getPatients = async (req, res) => {
     }
 
     let query = {};
-    if (admissionType) query.admissionType = admissionType;
-    if (bloodGroup) query.bloodGroup = bloodGroup;
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { patientId: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } },
-      ];
+    if (isPatientRole && selfPatientId) {
+      query._id = selfPatientId;
+    } else {
+      if (admissionType) query.admissionType = admissionType;
+      if (bloodGroup) query.bloodGroup = bloodGroup;
+      if (search) {
+        query.$or = [
+          { name: { $regex: search, $options: 'i' } },
+          { patientId: { $regex: search, $options: 'i' } },
+          { phone: { $regex: search, $options: 'i' } },
+        ];
+      }
     }
 
     const patients = await Patient.find(query).populate('assignedDoctor', 'name specialization').sort({ createdAt: -1 });
@@ -45,6 +61,9 @@ exports.getPatients = async (req, res) => {
 // @route POST /api/patients
 exports.createPatient = async (req, res) => {
   try {
+    if (req.user && req.user.role === 'Patient') {
+      return res.status(403).json({ success: false, message: 'Patients are not authorized to create patient records.' });
+    }
     const { name, age, gender, bloodGroup, phone, email, address, emergencyContact, admissionType, roomNumber, assignedDoctor, allergies } = req.body;
 
     if (!name || !age || !gender || !phone) {
@@ -52,13 +71,13 @@ exports.createPatient = async (req, res) => {
     }
 
     const patientId = `PAT-${Math.floor(1000 + Math.random() * 9000)}`;
+    const doctorRef = !req.isMockDb ? await resolveRef(Doctor, 'doctorId', assignedDoctor) : assignedDoctor;
 
-    const newPatient = {
-      _id: `66p1000${Date.now()}`,
+    const patientData = {
       patientId,
       name,
       age: Number(age),
-      gender,
+      gender: gender || 'Male',
       bloodGroup: bloodGroup || 'Unknown',
       phone,
       email: email || '',
@@ -66,36 +85,43 @@ exports.createPatient = async (req, res) => {
       emergencyContact: emergencyContact || { name: '', relationship: '', phone: '' },
       admissionType: admissionType || 'OPD',
       roomNumber: roomNumber || (admissionType === 'IPD' ? 'Room 101' : 'N/A'),
-      assignedDoctor: assignedDoctor || null,
+      assignedDoctor: doctorRef,
       allergies: allergies || [],
       createdAt: new Date(),
     };
 
     if (req.isMockDb) {
+      const newPatient = { _id: new mongoose.Types.ObjectId().toString(), ...patientData };
       mockDb.patients.push(newPatient);
       return res.status(201).json({ success: true, patient: newPatient });
     }
 
-    const patient = await Patient.create(newPatient);
+    const patient = await Patient.create(patientData);
     res.status(201).json({ success: true, patient });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc Get single patient by ID
+// @desc Get patient details by ID
 // @route GET /api/patients/:id
 exports.getPatientById = async (req, res) => {
   try {
     const { id } = req.params;
 
     if (req.isMockDb) {
-      const patient = mockDb.patients.find((p) => p._id === id || p.patientId === id || p.userId === id);
+      const patient = mockDb.patients.find((p) => p._id === id || p.patientId === id);
       if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
       return res.status(200).json({ success: true, patient });
     }
 
-    const patient = await Patient.findById(id).populate('assignedDoctor', 'name specialization roomNumber');
+    let patient;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      patient = await Patient.findById(id).populate('assignedDoctor', 'name specialization');
+    } else {
+      patient = await Patient.findOne({ $or: [{ _id: id }, { patientId: id }] }).populate('assignedDoctor', 'name specialization');
+    }
+
     if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
     res.status(200).json({ success: true, patient });
   } catch (error) {
@@ -107,17 +133,33 @@ exports.getPatientById = async (req, res) => {
 // @route PUT /api/patients/:id
 exports.updatePatient = async (req, res) => {
   try {
+    if (req.user && req.user.role === 'Patient') {
+      return res.status(403).json({ success: false, message: 'Patients are not permitted to edit patient details.' });
+    }
     const { id } = req.params;
+    const updateData = { ...req.body };
+    delete updateData._id;
+
     if (req.isMockDb) {
       const idx = mockDb.patients.findIndex((p) => p._id === id || p.patientId === id);
       if (idx !== -1) {
-        mockDb.patients[idx] = { ...mockDb.patients[idx], ...req.body };
+        mockDb.patients[idx] = { ...mockDb.patients[idx], ...updateData };
         return res.status(200).json({ success: true, patient: mockDb.patients[idx] });
       }
       return res.status(404).json({ success: false, message: 'Patient not found' });
     }
 
-    const patient = await Patient.findByIdAndUpdate(id, req.body, { new: true });
+    let patient;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      patient = await Patient.findByIdAndUpdate(id, updateData, { new: true });
+    } else {
+      patient = await Patient.findOneAndUpdate({ $or: [{ _id: id }, { patientId: id }] }, updateData, { new: true });
+    }
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient not found' });
+    }
+
     res.status(200).json({ success: true, patient });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -134,7 +176,12 @@ exports.deletePatient = async (req, res) => {
       return res.status(200).json({ success: true, message: 'Patient deleted successfully' });
     }
 
-    await Patient.findByIdAndDelete(id);
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      await Patient.findByIdAndDelete(id);
+    } else {
+      await Patient.findOneAndDelete({ $or: [{ _id: id }, { patientId: id }] });
+    }
+
     res.status(200).json({ success: true, message: 'Patient deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

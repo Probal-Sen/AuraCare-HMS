@@ -1,19 +1,32 @@
+const mongoose = require('mongoose');
 const Prescription = require('../models/Prescription');
 const Patient = require('../models/Patient');
 const Doctor = require('../models/Doctor');
+const Appointment = require('../models/Appointment');
 const { generatePrescriptionPDF } = require('../utils/pdfGenerator');
 const { mockDb } = require('../utils/seedData');
+const { resolveRef, getPatientIdForUser } = require('../utils/idHelper');
 
-// @desc Get prescriptions
+// @desc Get prescriptions (Scoped for Patient role)
 // @route GET /api/prescriptions
 exports.getPrescriptions = async (req, res) => {
   try {
     const { patientId, doctorId, status } = req.query;
+    const isPatientRole = req.user && req.user.role === 'Patient';
+    let selfPatientId = null;
+
+    if (isPatientRole) {
+      selfPatientId = await getPatientIdForUser(req.user, req.isMockDb, mockDb);
+    }
 
     if (req.isMockDb) {
       let filtered = [...mockDb.prescriptions];
-      if (patientId) filtered = filtered.filter((p) => p.patient === patientId);
-      if (doctorId) filtered = filtered.filter((p) => p.doctor === doctorId);
+      if (isPatientRole && selfPatientId) {
+        filtered = filtered.filter((p) => p.patient === selfPatientId || p.patient._id === selfPatientId);
+      } else {
+        if (patientId) filtered = filtered.filter((p) => p.patient === patientId);
+        if (doctorId) filtered = filtered.filter((p) => p.doctor === doctorId);
+      }
       if (status) filtered = filtered.filter((p) => p.status === status);
 
       const populated = filtered.map((rx) => {
@@ -26,8 +39,12 @@ exports.getPrescriptions = async (req, res) => {
     }
 
     let query = {};
-    if (patientId) query.patient = patientId;
-    if (doctorId) query.doctor = doctorId;
+    if (isPatientRole && selfPatientId) {
+      query.patient = selfPatientId;
+    } else {
+      if (patientId) query.patient = patientId;
+      if (doctorId) query.doctor = doctorId;
+    }
     if (status) query.status = status;
 
     const prescriptions = await Prescription.find(query)
@@ -53,12 +70,15 @@ exports.createPrescription = async (req, res) => {
 
     const prescriptionId = `RX-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const newRx = {
-      _id: `66pr100${Date.now()}`,
+    const patientRef = !req.isMockDb ? await resolveRef(Patient, 'patientId', patientId) : patientId;
+    const doctorRef = !req.isMockDb ? await resolveRef(Doctor, 'doctorId', doctorId) : doctorId;
+    const aptRef = !req.isMockDb ? await resolveRef(Appointment, 'appointmentId', appointmentId) : appointmentId;
+
+    const rxData = {
       prescriptionId,
-      patient: patientId,
-      doctor: doctorId || '66d100000000000000000001',
-      appointment: appointmentId,
+      patient: patientRef,
+      doctor: doctorRef,
+      appointment: aptRef,
       medicines,
       diagnosisNotes: diagnosisNotes || '',
       status: 'Pending',
@@ -66,11 +86,12 @@ exports.createPrescription = async (req, res) => {
     };
 
     if (req.isMockDb) {
+      const newRx = { _id: new mongoose.Types.ObjectId().toString(), ...rxData };
       mockDb.prescriptions.push(newRx);
       return res.status(201).json({ success: true, prescription: newRx });
     }
 
-    const prescription = await Prescription.create(newRx);
+    const prescription = await Prescription.create(rxData);
     res.status(201).json({ success: true, prescription });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

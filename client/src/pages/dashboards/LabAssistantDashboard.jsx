@@ -20,6 +20,13 @@ const LabAssistantDashboard = () => {
 
   useEffect(() => {
     fetchLabReports();
+    const interval = setInterval(fetchLabReports, 8000);
+    const handleSync = () => fetchLabReports();
+    window.addEventListener('auracare_data_updated', handleSync);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('auracare_data_updated', handleSync);
+    };
   }, []);
 
   const fetchLabReports = async () => {

@@ -1,6 +1,9 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Doctor = require('../models/Doctor');
+const Department = require('../models/Department');
 const { mockDb } = require('../utils/seedData');
+const { resolveRef } = require('../utils/idHelper');
 
 // @desc Get all users with filters, search, pagination
 // @route GET /api/users
@@ -46,8 +49,7 @@ exports.createUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please provide all required fields' });
     }
 
-    const userObj = {
-      _id: `66u1000${Date.now()}`,
+    const userData = {
       name,
       email,
       password: password || 'Password123!',
@@ -59,10 +61,11 @@ exports.createUser = async (req, res) => {
     };
 
     if (req.isMockDb) {
+      const userObj = { _id: new mongoose.Types.ObjectId().toString(), ...userData };
       mockDb.users.push(userObj);
       if (role === 'Doctor') {
         mockDb.doctors.push({
-          _id: `66d1000${Date.now()}`,
+          _id: new mongoose.Types.ObjectId().toString(),
           userId: userObj._id,
           doctorId: `DOC-${Math.floor(1000 + Math.random() * 9000)}`,
           name,
@@ -78,11 +81,13 @@ exports.createUser = async (req, res) => {
 
     const user = await User.create({ name, email, password, role, phone });
     if (role === 'Doctor') {
+      const deptRef = await resolveRef(Department, ['code', 'name'], department);
       await Doctor.create({
         userId: user._id,
         doctorId: `DOC-${Math.floor(1000 + Math.random() * 9000)}`,
         name,
         specialization: specialization || 'General Medicine',
+        department: deptRef,
         consultationFee: 100,
       });
     }
@@ -98,21 +103,34 @@ exports.createUser = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, role, status } = req.body;
+    const { name, phone, role, status, email } = req.body;
+    const updateFields = {};
+    if (name) updateFields.name = name;
+    if (phone !== undefined) updateFields.phone = phone;
+    if (role) updateFields.role = role;
+    if (status) updateFields.status = status;
+    if (email) updateFields.email = email;
 
     if (req.isMockDb) {
       const idx = mockDb.users.findIndex((u) => u._id === id || u.id === id);
       if (idx !== -1) {
-        if (name) mockDb.users[idx].name = name;
-        if (phone) mockDb.users[idx].phone = phone;
-        if (role) mockDb.users[idx].role = role;
-        if (status) mockDb.users[idx].status = status;
+        mockDb.users[idx] = { ...mockDb.users[idx], ...updateFields };
         return res.status(200).json({ success: true, user: mockDb.users[idx] });
       }
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const user = await User.findByIdAndUpdate(id, { name, phone, role, status }, { new: true }).select('-password');
+    let user;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      user = await User.findByIdAndUpdate(id, updateFields, { new: true }).select('-password');
+    } else {
+      user = await User.findOneAndUpdate({ _id: id }, updateFields, { new: true }).select('-password');
+    }
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
     res.status(200).json({ success: true, user });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -129,7 +147,12 @@ exports.deleteUser = async (req, res) => {
       return res.status(200).json({ success: true, message: 'User deleted successfully' });
     }
 
-    await User.findByIdAndDelete(id);
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      await User.findByIdAndDelete(id);
+    } else {
+      await User.findOneAndDelete({ _id: id });
+    }
+
     res.status(200).json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

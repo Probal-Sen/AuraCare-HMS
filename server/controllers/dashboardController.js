@@ -117,26 +117,57 @@ exports.getDoctorDashboard = async (req, res) => {
   }
 };
 
-// @desc Patient Dashboard Statistics
+// @desc Patient Dashboard Statistics & Vitals Analytical History
 // @route GET /api/dashboard/patient
 exports.getPatientDashboard = async (req, res) => {
   try {
+    const { getPatientIdForUser } = require('../utils/idHelper');
+    const isPatientRole = req.user && req.user.role === 'Patient';
+    let selfPatientId = null;
+
+    if (isPatientRole) {
+      selfPatientId = await getPatientIdForUser(req.user, req.isMockDb, mockDb);
+    }
+
+    const demoVitalsHistory = [
+      { date: '15 Jul', bloodPressureSystolic: 130, bloodPressureDiastolic: 85, heartRate: 76, temperature: 98.6, weight: 76.0, spo2: 98, recordedBy: 'Nurse Sunita Verma' },
+      { date: '22 Jul', bloodPressureSystolic: 126, bloodPressureDiastolic: 82, heartRate: 74, temperature: 98.4, weight: 75.8, spo2: 99, recordedBy: 'Nurse Sunita Verma' },
+      { date: '29 Jul', bloodPressureSystolic: 122, bloodPressureDiastolic: 80, heartRate: 72, temperature: 98.6, weight: 75.5, spo2: 98, recordedBy: 'Nurse Sunita Verma' },
+      { date: '01 Aug', bloodPressureSystolic: 120, bloodPressureDiastolic: 80, heartRate: 70, temperature: 98.2, weight: 75.0, spo2: 99, recordedBy: 'Nurse Sunita Verma' },
+      { date: '05 Aug', bloodPressureSystolic: 118, bloodPressureDiastolic: 78, heartRate: 68, temperature: 98.6, weight: 74.8, spo2: 99, recordedBy: 'Nurse Sunita Verma' },
+    ];
+
     if (req.isMockDb) {
+      const rx = selfPatientId ? mockDb.prescriptions.filter((p) => p.patient === selfPatientId || p.patient._id === selfPatientId) : mockDb.prescriptions;
+      const bills = selfPatientId ? mockDb.bills.filter((b) => b.patient === selfPatientId || b.patient._id === selfPatientId) : mockDb.bills;
+      const labs = selfPatientId ? mockDb.labReports.filter((l) => l.patient === selfPatientId || l.patient._id === selfPatientId) : mockDb.labReports;
+      const apts = selfPatientId ? mockDb.appointments.filter((a) => a.patient === selfPatientId || a.patient._id === selfPatientId) : mockDb.appointments;
+
       return res.status(200).json({
         success: true,
-        upcomingAppointment: mockDb.appointments[0] || null,
-        prescriptions: mockDb.prescriptions,
-        bills: mockDb.bills,
-        labReports: mockDb.labReports,
+        upcomingAppointment: apts[0] || null,
+        prescriptions: rx,
+        bills: bills,
+        labReports: labs,
+        vitalsHistory: demoVitalsHistory,
       });
     }
 
+    let query = {};
+    if (selfPatientId) query.patient = selfPatientId;
+
+    const prescriptions = await Prescription.find(query).populate('doctor', 'name specialization').sort({ createdAt: -1 });
+    const bills = await Bill.find(query).sort({ createdAt: -1 });
+    const labReports = await LabReport.find(query).sort({ createdAt: -1 });
+    const upcomingAppointment = await Appointment.findOne({ ...query, status: 'Scheduled' }).populate('doctor', 'name specialization roomNumber').sort({ date: 1 });
+
     res.status(200).json({
       success: true,
-      upcomingAppointment: null,
-      prescriptions: [],
-      bills: [],
-      labReports: [],
+      upcomingAppointment,
+      prescriptions,
+      bills,
+      labReports,
+      vitalsHistory: demoVitalsHistory,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

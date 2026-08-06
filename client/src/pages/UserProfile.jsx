@@ -15,10 +15,14 @@ const UserProfile = () => {
   const [phone, setPhone] = useState(user?.phone || '');
   const [uploading, setUploading] = useState(false);
 
-  const handleProfileSave = (e) => {
+  const handleProfileSave = async (e) => {
     e.preventDefault();
-    updateUserProfile({ name, phone });
-    addToast('Profile updated successfully!', 'success');
+    const res = await updateUserProfile({ name, phone });
+    if (res?.success !== false) {
+      addToast('Profile updated successfully!', 'success');
+    } else {
+      addToast(res.message || 'Profile update failed', 'danger');
+    }
   };
 
   const handlePhotoUpload = async (e) => {

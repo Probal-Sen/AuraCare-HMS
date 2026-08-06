@@ -22,6 +22,13 @@ const CashierDashboard = () => {
 
   useEffect(() => {
     fetchBills();
+    const interval = setInterval(fetchBills, 8000);
+    const handleSync = () => fetchBills();
+    window.addEventListener('auracare_data_updated', handleSync);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('auracare_data_updated', handleSync);
+    };
   }, []);
 
   const fetchBills = async () => {

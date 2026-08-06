@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Notification = require('../models/Notification');
 const { mockDb } = require('../utils/seedData');
 
@@ -33,7 +34,12 @@ exports.markAsRead = async (req, res) => {
       return res.status(200).json({ success: true, message: 'Notification marked as read' });
     }
 
-    await Notification.findByIdAndUpdate(id, { isRead: true });
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      await Notification.findByIdAndUpdate(id, { isRead: true });
+    } else {
+      await Notification.findOneAndUpdate({ _id: id }, { isRead: true });
+    }
+
     res.status(200).json({ success: true, message: 'Notification marked as read' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

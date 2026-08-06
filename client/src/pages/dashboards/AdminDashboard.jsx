@@ -19,6 +19,13 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 8000);
+    const handleSync = () => fetchDashboardData();
+    window.addEventListener('auracare_data_updated', handleSync);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('auracare_data_updated', handleSync);
+    };
   }, []);
 
   const fetchDashboardData = async () => {

@@ -15,6 +15,13 @@ const PharmacistDashboard = () => {
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(fetchData, 8000);
+    const handleSync = () => fetchData();
+    window.addEventListener('auracare_data_updated', handleSync);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('auracare_data_updated', handleSync);
+    };
   }, []);
 
   const fetchData = async () => {

@@ -4,18 +4,30 @@ const mongoose = require('mongoose');
 const Bill = require('../models/Bill');
 const Payment = require('../models/Payment');
 const Patient = require('../models/Patient');
+const Appointment = require('../models/Appointment');
 const { generateInvoicePDF } = require('../utils/pdfGenerator');
 const { mockDb } = require('../utils/seedData');
+const { resolveRef, getPatientIdForUser } = require('../utils/idHelper');
 
-// @desc Get bills with status & patient filter
+// @desc Get bills with status & patient filter (Scoped for Patient role)
 // @route GET /api/bills
 exports.getBills = async (req, res) => {
   try {
     const { patientId, paymentStatus } = req.query;
+    const isPatientRole = req.user && req.user.role === 'Patient';
+    let selfPatientId = null;
+
+    if (isPatientRole) {
+      selfPatientId = await getPatientIdForUser(req.user, req.isMockDb, mockDb);
+    }
 
     if (req.isMockDb) {
       let filtered = [...mockDb.bills];
-      if (patientId) filtered = filtered.filter((b) => b.patient === patientId);
+      if (isPatientRole && selfPatientId) {
+        filtered = filtered.filter((b) => b.patient === selfPatientId || b.patient._id === selfPatientId);
+      } else {
+        if (patientId) filtered = filtered.filter((b) => b.patient === patientId);
+      }
       if (paymentStatus) filtered = filtered.filter((b) => b.paymentStatus === paymentStatus);
 
       const populated = filtered.map((b) => {
@@ -27,7 +39,11 @@ exports.getBills = async (req, res) => {
     }
 
     let query = {};
-    if (patientId) query.patient = patientId;
+    if (isPatientRole && selfPatientId) {
+      query.patient = selfPatientId;
+    } else {
+      if (patientId) query.patient = patientId;
+    }
     if (paymentStatus) query.paymentStatus = paymentStatus;
 
     const bills = await Bill.find(query)
@@ -56,11 +72,13 @@ exports.createBill = async (req, res) => {
     const disc = Number(insuranceDiscount || 0) + (subtotal * (Number(discountPercent || 0) / 100));
     const totalAmount = Math.max(0, subtotal - disc);
 
-    const newBill = {
-      _id: `66b1000${Date.now()}`,
+    const patientRef = !req.isMockDb ? await resolveRef(Patient, 'patientId', patientId) : patientId;
+    const aptRef = !req.isMockDb ? await resolveRef(Appointment, 'appointmentId', appointmentId) : appointmentId;
+
+    const billData = {
       invoiceNumber,
-      patient: patientId,
-      appointment: appointmentId || null,
+      patient: patientRef,
+      appointment: aptRef,
       items,
       subtotal,
       discountPercent: Number(discountPercent || 0),
@@ -75,11 +93,12 @@ exports.createBill = async (req, res) => {
     };
 
     if (req.isMockDb) {
+      const newBill = { _id: new mongoose.Types.ObjectId().toString(), ...billData };
       mockDb.bills.push(newBill);
       return res.status(201).json({ success: true, bill: newBill });
     }
 
-    const bill = await Bill.create(newBill);
+    const bill = await Bill.create(billData);
     res.status(201).json({ success: true, bill });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

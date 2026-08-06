@@ -24,6 +24,13 @@ const NurseDashboard = () => {
 
   useEffect(() => {
     fetchAppointments();
+    const interval = setInterval(fetchAppointments, 8000);
+    const handleSync = () => fetchAppointments();
+    window.addEventListener('auracare_data_updated', handleSync);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('auracare_data_updated', handleSync);
+    };
   }, []);
 
   const fetchAppointments = async () => {

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Medicine = require('../models/Medicine');
 const { mockDb } = require('../utils/seedData');
 
@@ -53,8 +54,7 @@ exports.addMedicine = async (req, res) => {
 
     const medCode = code || `MED-${Math.floor(100 + Math.random() * 900)}`;
 
-    const newMed = {
-      _id: `66m1000${Date.now()}`,
+    const medData = {
       code: medCode,
       name,
       category: category || 'Other',
@@ -69,11 +69,12 @@ exports.addMedicine = async (req, res) => {
     };
 
     if (req.isMockDb) {
+      const newMed = { _id: new mongoose.Types.ObjectId().toString(), ...medData };
       mockDb.medicines.push(newMed);
       return res.status(201).json({ success: true, medicine: newMed });
     }
 
-    const medicine = await Medicine.create(newMed);
+    const medicine = await Medicine.create(medData);
     res.status(201).json({ success: true, medicine });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -85,17 +86,29 @@ exports.addMedicine = async (req, res) => {
 exports.updateMedicine = async (req, res) => {
   try {
     const { id } = req.params;
+    const updateData = { ...req.body };
+    delete updateData._id;
 
     if (req.isMockDb) {
       const idx = mockDb.medicines.findIndex((m) => m._id === id || m.code === id);
       if (idx !== -1) {
-        mockDb.medicines[idx] = { ...mockDb.medicines[idx], ...req.body };
+        mockDb.medicines[idx] = { ...mockDb.medicines[idx], ...updateData };
         return res.status(200).json({ success: true, medicine: mockDb.medicines[idx] });
       }
       return res.status(404).json({ success: false, message: 'Medicine not found' });
     }
 
-    const medicine = await Medicine.findByIdAndUpdate(id, req.body, { new: true });
+    let medicine;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      medicine = await Medicine.findByIdAndUpdate(id, updateData, { new: true });
+    } else {
+      medicine = await Medicine.findOneAndUpdate({ $or: [{ _id: id }, { code: id }] }, updateData, { new: true });
+    }
+
+    if (!medicine) {
+      return res.status(404).json({ success: false, message: 'Medicine not found' });
+    }
+
     res.status(200).json({ success: true, medicine });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -113,7 +126,12 @@ exports.deleteMedicine = async (req, res) => {
       return res.status(200).json({ success: true, message: 'Medicine removed from inventory' });
     }
 
-    await Medicine.findByIdAndDelete(id);
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      await Medicine.findByIdAndDelete(id);
+    } else {
+      await Medicine.findOneAndDelete({ $or: [{ _id: id }, { code: id }] });
+    }
+
     res.status(200).json({ success: true, message: 'Medicine removed from inventory' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

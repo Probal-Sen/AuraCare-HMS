@@ -10,7 +10,7 @@ const protect = async (req, res, next) => {
     token = req.query.token;
   }
 
-  if (token) {
+  if (token && token !== 'null' && token !== 'undefined') {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'arogya_hms_jwt_super_secret_key_2026_production');
       
@@ -29,9 +29,7 @@ const protect = async (req, res, next) => {
     }
   }
 
-  if (!token) {
-    return res.status(401).json({ success: false, message: 'Not authorized, no token provided' });
-  }
+  return res.status(401).json({ success: false, message: 'Not authorized, no token provided' });
 };
 
 const authorize = (...roles) => {

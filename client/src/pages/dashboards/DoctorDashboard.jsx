@@ -30,6 +30,13 @@ const DoctorDashboard = () => {
 
   useEffect(() => {
     fetchDoctorData();
+    const interval = setInterval(fetchDoctorData, 8000);
+    const handleSync = () => fetchDoctorData();
+    window.addEventListener('auracare_data_updated', handleSync);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('auracare_data_updated', handleSync);
+    };
   }, []);
 
   const fetchDoctorData = async () => {
@@ -65,6 +72,7 @@ const DoctorDashboard = () => {
       if (res.data.success) {
         addToast('Prescription issued successfully!', 'success');
         setIsRxModalOpen(false);
+        fetchDoctorData();
       }
     } catch (err) {
       addToast(err.response?.data?.message || 'Failed to issue prescription', 'danger');

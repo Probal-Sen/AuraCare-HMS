@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Department = require('../models/Department');
 const { mockDb } = require('../utils/seedData');
 
@@ -25,7 +26,6 @@ exports.createDepartment = async (req, res) => {
     }
 
     const deptObj = {
-      _id: `66a1000${Date.now()}`,
       name,
       code,
       description: description || '',
@@ -34,8 +34,9 @@ exports.createDepartment = async (req, res) => {
     };
 
     if (req.isMockDb) {
-      mockDb.departments.push(deptObj);
-      return res.status(201).json({ success: true, department: deptObj });
+      const mockDept = { _id: new mongoose.Types.ObjectId().toString(), ...deptObj };
+      mockDb.departments.push(mockDept);
+      return res.status(201).json({ success: true, department: mockDept });
     }
 
     const department = await Department.create(deptObj);
@@ -50,16 +51,29 @@ exports.createDepartment = async (req, res) => {
 exports.updateDepartment = async (req, res) => {
   try {
     const { id } = req.params;
+    const updateData = { ...req.body };
+    delete updateData._id;
+
     if (req.isMockDb) {
-      const idx = mockDb.departments.findIndex((d) => d._id === id);
+      const idx = mockDb.departments.findIndex((d) => d._id === id || d.code === id);
       if (idx !== -1) {
-        mockDb.departments[idx] = { ...mockDb.departments[idx], ...req.body };
+        mockDb.departments[idx] = { ...mockDb.departments[idx], ...updateData };
         return res.status(200).json({ success: true, department: mockDb.departments[idx] });
       }
       return res.status(404).json({ success: false, message: 'Department not found' });
     }
 
-    const department = await Department.findByIdAndUpdate(id, req.body, { new: true });
+    let department;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      department = await Department.findByIdAndUpdate(id, updateData, { new: true });
+    } else {
+      department = await Department.findOneAndUpdate({ $or: [{ _id: id }, { code: id }] }, updateData, { new: true });
+    }
+
+    if (!department) {
+      return res.status(404).json({ success: false, message: 'Department not found' });
+    }
+
     res.status(200).json({ success: true, department });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -72,11 +86,16 @@ exports.deleteDepartment = async (req, res) => {
   try {
     const { id } = req.params;
     if (req.isMockDb) {
-      mockDb.departments = mockDb.departments.filter((d) => d._id !== id);
+      mockDb.departments = mockDb.departments.filter((d) => d._id !== id && d.code !== id);
       return res.status(200).json({ success: true, message: 'Department deleted' });
     }
 
-    await Department.findByIdAndDelete(id);
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      await Department.findByIdAndDelete(id);
+    } else {
+      await Department.findOneAndDelete({ $or: [{ _id: id }, { code: id }] });
+    }
+
     res.status(200).json({ success: true, message: 'Department deleted' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

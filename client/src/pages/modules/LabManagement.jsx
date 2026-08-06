@@ -4,11 +4,15 @@ import Sidebar from '../../components/Sidebar';
 import DataTable from '../../components/DataTable';
 import Modal from '../../components/Modal';
 import API from '../../services/api';
+import { AuthContext } from '../../context/AuthContext';
 import { NotificationContext } from '../../context/NotificationContext';
 import { Plus, Edit3, Trash2 } from 'lucide-react';
 
 const LabManagement = () => {
+  const { user } = useContext(AuthContext);
   const { addToast } = useContext(NotificationContext);
+  const isPatientRole = user?.role === 'Patient';
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [reports, setReports] = useState([]);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -46,88 +50,96 @@ const LabManagement = () => {
 
   const handleCreateReport = async (e) => {
     e.preventDefault();
+    if (isPatientRole) return;
     try {
       const res = await API.post('/lab/reports', form);
       if (res.data.success) {
-        addToast('Lab report ordered successfully!', 'success');
+        addToast('Lab test order created successfully!', 'success');
         setIsAddOpen(false);
         fetchReports();
       }
     } catch (err) {
-      addToast(err.response?.data?.message || 'Order failed', 'danger');
+      addToast(err.response?.data?.message || 'Creation failed', 'danger');
     }
   };
 
-  const handleOpenEdit = (report) => {
-    setEditingReport(report);
+  const handleOpenEdit = (r) => {
+    if (isPatientRole) return;
+    setEditingReport(r);
     setEditForm({
-      testName: report.testName || '',
-      testCategory: report.testCategory || 'Blood Test',
-      cost: report.cost || '500',
-      status: report.status || 'Completed',
-      resultSummary: report.resultSummary || '',
+      testName: r.testName || '',
+      testCategory: r.testCategory || 'Blood Test',
+      cost: r.cost || '',
+      status: r.status || 'Completed',
+      resultSummary: r.resultSummary || '',
     });
     setIsEditOpen(true);
   };
 
   const handleUpdateReport = async (e) => {
     e.preventDefault();
+    if (isPatientRole) return;
     try {
-      setReports((prev) =>
-        prev.map((r) =>
-          (r._id === editingReport._id || r.id === editingReport.id)
-            ? { ...r, ...editForm }
-            : r
-        )
-      );
-      addToast('Lab report updated successfully!', 'success');
-      setIsEditOpen(false);
+      const reportId = editingReport._id || editingReport.id;
+      const res = await API.put(`/lab/reports/${reportId}`, editForm);
+      if (res.data.success) {
+        addToast('Lab report updated successfully!', 'success');
+        setIsEditOpen(false);
+        fetchReports();
+      }
     } catch (err) {
-      addToast('Update failed', 'danger');
+      addToast(err.response?.data?.message || 'Update failed', 'danger');
     }
   };
 
   const handleDeleteReport = async (reportId) => {
+    if (isPatientRole) return;
     if (!window.confirm('Are you sure you want to delete this lab report?')) return;
     try {
-      setReports((prev) => prev.filter((r) => r._id !== reportId && r.id !== reportId));
-      addToast('Lab report deleted', 'info');
+      const res = await API.delete(`/lab/reports/${reportId}`);
+      if (res.data.success) {
+        addToast('Lab report deleted successfully', 'info');
+        fetchReports();
+      }
     } catch (err) {
-      addToast('Delete failed', 'danger');
+      addToast(err.response?.data?.message || 'Delete failed', 'danger');
     }
   };
 
-  const columns = [
-    { header: 'Report ID', accessor: 'reportId' },
-    { header: 'Patient Name', accessor: 'patient', cell: (r) => r.patient?.name || 'Rahul Kumar' },
+  const baseColumns = [
+    { header: 'Order ID', accessor: 'reportId' },
+    { header: 'Patient Name', accessor: 'patient', cell: (r) => r.patient?.name || 'John Doe' },
     { header: 'Test Name', accessor: 'testName' },
-    { header: 'Test Category', accessor: 'testCategory' },
-    { header: 'Cost (₹)', accessor: 'cost', cell: (r) => `₹${r.cost}` },
-    { header: 'Status', accessor: 'status', cell: (r) => <span className="font-bold text-xs text-medical-600">{r.status}</span> },
+    { header: 'Category', accessor: 'testCategory' },
+    { header: 'Cost (₹)', accessor: 'cost' },
+    { header: 'Status', accessor: 'status', cell: (r) => <span className="font-bold text-xs text-blue-600">{r.status}</span> },
     { header: 'Findings / Summary', accessor: 'resultSummary' },
-    {
-      header: 'Actions',
-      accessor: 'actions',
-      cell: (r) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleOpenEdit(r)}
-            className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 hover:bg-blue-100 transition-colors"
-            title="Edit Diagnostic Report"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => handleDeleteReport(r._id || r.id)}
-            className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 hover:bg-rose-100 transition-colors"
-            title="Delete Report"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
-    },
   ];
+
+  const actionColumn = {
+    header: 'Actions',
+    accessor: 'actions',
+    cell: (r) => (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => handleOpenEdit(r)}
+          className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 hover:bg-blue-100 transition-colors"
+          title="Edit Lab Report"
+        >
+          <Edit3 className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={() => handleDeleteReport(r._id || r.id)}
+          className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 hover:bg-rose-100 transition-colors"
+          title="Delete Lab Report"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    ),
+  };
+
+  const columns = isPatientRole ? baseColumns : [...baseColumns, actionColumn];
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
@@ -140,13 +152,15 @@ const LabManagement = () => {
               <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Laboratory & Radiology Diagnostics Management</h1>
               <p className="text-xs text-slate-500">Pathology tests, blood reports, X-rays, MRI scans, CT scans, and test pricing catalog</p>
             </div>
-            <button
-              onClick={() => setIsAddOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-medical-600 text-white font-bold text-xs shadow-md flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Order New Diagnostic Test</span>
-            </button>
+            {!isPatientRole && (
+              <button
+                onClick={() => setIsAddOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-medical-600 text-white font-bold text-xs shadow-md flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Order New Diagnostic Test</span>
+              </button>
+            )}
           </div>
 
           <DataTable title="Diagnostic Reports & Imaging Inventory" columns={columns} data={reports} />

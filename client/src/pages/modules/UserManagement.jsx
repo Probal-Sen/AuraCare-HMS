@@ -34,6 +34,9 @@ const UserManagement = () => {
 
   useEffect(() => {
     fetchUsers();
+    const handleSync = () => fetchUsers();
+    window.addEventListener('auracare_data_updated', handleSync);
+    return () => window.removeEventListener('auracare_data_updated', handleSync);
   }, []);
 
   const fetchUsers = async () => {

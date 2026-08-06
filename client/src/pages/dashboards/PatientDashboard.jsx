@@ -4,6 +4,7 @@ import Sidebar from '../../components/Sidebar';
 import StatCard from '../../components/StatCard';
 import DataTable from '../../components/DataTable';
 import Modal from '../../components/Modal';
+import VitalsAnalyticalChart from '../../components/VitalsAnalyticalChart';
 import { AuthContext } from '../../context/AuthContext';
 import { NotificationContext } from '../../context/NotificationContext';
 import API, { downloadPdfBlob } from '../../services/api';
@@ -21,6 +22,13 @@ const PatientDashboard = () => {
 
   useEffect(() => {
     fetchPatientData();
+    const interval = setInterval(fetchPatientData, 8000);
+    const handleSync = () => fetchPatientData();
+    window.addEventListener('auracare_data_updated', handleSync);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('auracare_data_updated', handleSync);
+    };
   }, []);
 
   const fetchPatientData = async () => {
@@ -155,6 +163,9 @@ const PatientDashboard = () => {
             <StatCard title="Lab Reports Ready" value={dashboardData?.labReports?.length || 1} icon={Activity} color="purple" />
             <StatCard title="Unpaid Invoices" value="₹0.00" icon={CreditCard} color="amber" />
           </div>
+
+          {/* Vitals Analytical Chart recorded by Nurse */}
+          <VitalsAnalyticalChart vitalsData={dashboardData?.vitalsHistory} />
 
           {/* Tables */}
           <div className="space-y-6">

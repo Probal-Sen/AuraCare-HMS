@@ -1,5 +1,8 @@
+const mongoose = require('mongoose');
 const Doctor = require('../models/Doctor');
+const Department = require('../models/Department');
 const { mockDb } = require('../utils/seedData');
+const { resolveRef } = require('../utils/idHelper');
 
 // @desc Get all doctors
 // @route GET /api/doctors
@@ -39,7 +42,13 @@ exports.getDoctorById = async (req, res) => {
       return res.status(200).json({ success: true, doctor: doc });
     }
 
-    const doctor = await Doctor.findById(id).populate('department', 'name code');
+    let doctor;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      doctor = await Doctor.findById(id).populate('department', 'name code');
+    } else {
+      doctor = await Doctor.findOne({ $or: [{ _id: id }, { doctorId: id }] }).populate('department', 'name code');
+    }
+
     if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
     res.status(200).json({ success: true, doctor });
   } catch (error) {
@@ -52,17 +61,30 @@ exports.getDoctorById = async (req, res) => {
 exports.updateDoctor = async (req, res) => {
   try {
     const { id } = req.params;
+    const updateData = { ...req.body };
+    delete updateData._id;
+
+    if (updateData.department) {
+      updateData.department = await resolveRef(Department, ['code', 'name'], updateData.department);
+    }
 
     if (req.isMockDb) {
       const idx = mockDb.doctors.findIndex((d) => d._id === id || d.doctorId === id);
       if (idx !== -1) {
-        mockDb.doctors[idx] = { ...mockDb.doctors[idx], ...req.body };
+        mockDb.doctors[idx] = { ...mockDb.doctors[idx], ...updateData };
         return res.status(200).json({ success: true, doctor: mockDb.doctors[idx] });
       }
       return res.status(404).json({ success: false, message: 'Doctor not found' });
     }
 
-    const doctor = await Doctor.findByIdAndUpdate(id, req.body, { new: true });
+    let doctor;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      doctor = await Doctor.findByIdAndUpdate(id, updateData, { new: true });
+    } else {
+      doctor = await Doctor.findOneAndUpdate({ $or: [{ _id: id }, { doctorId: id }] }, updateData, { new: true });
+    }
+
+    if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
     res.status(200).json({ success: true, doctor });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

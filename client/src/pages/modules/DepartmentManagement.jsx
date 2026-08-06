@@ -60,7 +60,8 @@ const DepartmentManagement = () => {
   const handleUpdateDepartment = async (e) => {
     e.preventDefault();
     try {
-      const res = await API.post('/departments', editForm);
+      const deptId = editingDept._id || editingDept.id;
+      const res = await API.put(`/departments/${deptId}`, editForm);
       if (res.data.success) {
         addToast('Department updated successfully!', 'success');
         setIsEditDeptOpen(false);
@@ -74,10 +75,13 @@ const DepartmentManagement = () => {
   const handleDeleteDepartment = async (deptId) => {
     if (!window.confirm('Are you sure you want to delete this department?')) return;
     try {
-      setDepartments(departments.filter((d) => d._id !== deptId && d.id !== deptId));
-      addToast('Department deleted successfully', 'info');
+      const res = await API.delete(`/departments/${deptId}`);
+      if (res.data.success) {
+        addToast('Department deleted successfully', 'info');
+        fetchDepartments();
+      }
     } catch (err) {
-      addToast('Delete failed', 'danger');
+      addToast(err.response?.data?.message || 'Delete failed', 'danger');
     }
   };
 

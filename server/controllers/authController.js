@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
@@ -84,41 +85,42 @@ exports.register = async (req, res) => {
       return res.status(400).json({ success: false, message: 'User already exists with this email' });
     }
 
-    const newUserObj = {
-      _id: `66u1000${Date.now()}`,
-      name,
-      email,
-      password,
-      role: 'Patient',
-      phone: phone || '',
-      avatar: '/uploads/avatars/default.png',
-      status: 'Active',
-    };
-
-    const newPatientObj = {
-      _id: `66p1000${Date.now()}`,
-      userId: newUserObj._id,
-      patientId: `PAT-${Math.floor(1000 + Math.random() * 9000)}`,
-      name,
-      age: age || 30,
-      gender: gender || 'Male',
-      bloodGroup: bloodGroup || 'O+',
-      phone: phone || 'N/A',
-      email,
-      address: address || '',
-      admissionType: 'OPD',
-    };
-
-    let createdUser = newUserObj;
+    let createdUser;
 
     if (req.isMockDb) {
-      mockDb.users.push(newUserObj);
-      mockDb.patients.push(newPatientObj);
+      const mockUserObj = {
+        _id: new mongoose.Types.ObjectId().toString(),
+        name,
+        email,
+        password,
+        role: 'Patient',
+        phone: phone || '',
+        avatar: '/uploads/avatars/default.png',
+        status: 'Active',
+      };
+
+      const mockPatientObj = {
+        _id: new mongoose.Types.ObjectId().toString(),
+        userId: mockUserObj._id,
+        patientId: `PAT-${Math.floor(1000 + Math.random() * 9000)}`,
+        name,
+        age: age || 30,
+        gender: gender || 'Male',
+        bloodGroup: bloodGroup || 'O+',
+        phone: phone || 'N/A',
+        email,
+        address: address || '',
+        admissionType: 'OPD',
+      };
+
+      mockDb.users.push(mockUserObj);
+      mockDb.patients.push(mockPatientObj);
+      createdUser = mockUserObj;
     } else {
       const dbUser = await User.create({ name, email, password, role: 'Patient', phone });
       const dbPatient = await Patient.create({
         userId: dbUser._id,
-        patientId: newPatientObj.patientId,
+        patientId: `PAT-${Math.floor(1000 + Math.random() * 9000)}`,
         name,
         age: age || 30,
         gender: gender || 'Male',
@@ -137,12 +139,11 @@ exports.register = async (req, res) => {
         avatar: dbUser.avatar || '/uploads/avatars/default.png',
       };
 
-      // Also keep in-memory mockDb in sync for seamless fallback queries
       mockDb.users.push({ ...createdUser, password });
       mockDb.patients.push({
         _id: dbPatient._id,
         userId: dbUser._id,
-        patientId: newPatientObj.patientId,
+        patientId: dbPatient.patientId,
         name,
         age: age || 30,
         gender: gender || 'Male',
@@ -198,6 +199,61 @@ exports.getMe = async (req, res) => {
   }
 };
 
+// @desc Update user profile details
+// @route PUT /api/auth/profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, phone } = req.body;
+    const userId = req.user.id || req.user._id;
+
+    if (req.isMockDb) {
+      const idx = mockDb.users.findIndex((u) => u._id === userId || u.id === userId);
+      if (idx !== -1) {
+        if (name) mockDb.users[idx].name = name;
+        if (phone) mockDb.users[idx].phone = phone;
+        return res.status(200).json({
+          success: true,
+          message: 'Profile updated successfully',
+          user: {
+            id: mockDb.users[idx]._id || mockDb.users[idx].id,
+            name: mockDb.users[idx].name,
+            email: mockDb.users[idx].email,
+            role: mockDb.users[idx].role,
+            phone: mockDb.users[idx].phone || '',
+            avatar: mockDb.users[idx].avatar || '/uploads/avatars/default.png',
+          },
+        });
+      }
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { ...(name && { name }), ...(phone !== undefined && { phone }) },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone || '',
+        avatar: user.avatar || '/uploads/avatars/default.png',
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc Upload Avatar
 // @route POST /api/auth/upload-avatar
 exports.uploadAvatar = async (req, res) => {
@@ -206,9 +262,15 @@ exports.uploadAvatar = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please upload an image file' });
     }
     const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    const userId = req.user.id || req.user._id;
 
-    if (!req.isMockDb) {
-      await User.findByIdAndUpdate(req.user.id, { avatar: avatarUrl });
+    if (req.isMockDb) {
+      const idx = mockDb.users.findIndex((u) => u._id === userId || u.id === userId);
+      if (idx !== -1) {
+        mockDb.users[idx].avatar = avatarUrl;
+      }
+    } else {
+      await User.findByIdAndUpdate(userId, { avatar: avatarUrl });
     }
 
     res.status(200).json({

@@ -61,9 +61,8 @@ const Sidebar = ({ isOpen, onClose }) => {
       case 'Receptionist':
         return [
           { label: 'Reception Dashboard', path: '/receptionist/dashboard', icon: LayoutDashboard },
-          { label: 'Register Patient', path: '/patients', icon: HeartPulse },
+          { label: 'Patient Directory & Registration', path: '/patients', icon: HeartPulse },
           { label: 'Book Appointment', path: '/appointments', icon: Calendar },
-          { label: 'OPD / IPD Admissions', path: '/patients', icon: Building2 },
         ];
 
       case 'Nurse':
@@ -133,7 +132,7 @@ const Sidebar = ({ isOpen, onClose }) => {
             const Icon = item.icon;
             return (
               <NavLink
-                key={item.path}
+                key={`${item.label}-${item.path}`}
                 to={item.path}
                 onClick={onClose}
                 className={({ isActive }) =>
