@@ -1,8 +1,9 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Bell, Sun, Moon, LogOut, User, Menu, X, ShieldAlert } from 'lucide-react';
+import { Search, Bell, Sun, Moon, LogOut, User, Menu, X } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 import { ThemeContext } from '../context/ThemeContext';
+import UserAvatar from './UserAvatar';
 import API from '../services/api';
 
 const Header = ({ onToggleSidebar, isSidebarOpen }) => {
@@ -126,14 +127,7 @@ const Header = ({ onToggleSidebar, isSidebarOpen }) => {
               onClick={() => setShowProfileMenu(!showProfileMenu)}
               className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
-              <img
-                src={user?.avatar || '/uploads/avatars/default.png'}
-                alt={user?.name}
-                className="w-8 h-8 rounded-lg object-cover ring-2 ring-medical-500/30"
-                onError={(e) => {
-                  e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.name || 'User');
-                }}
-              />
+              <UserAvatar user={user} className="w-8 h-8 rounded-lg" textSize="text-base" />
               <div className="hidden sm:block text-left">
                 <p className="text-xs font-semibold leading-tight text-slate-900 dark:text-white">{user?.name}</p>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">{user?.role}</p>

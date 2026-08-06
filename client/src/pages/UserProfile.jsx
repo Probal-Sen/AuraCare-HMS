@@ -3,6 +3,7 @@ import { AuthContext } from '../context/AuthContext';
 import { NotificationContext } from '../context/NotificationContext';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
+import UserAvatar from '../components/UserAvatar';
 import { User, Mail, Phone, Camera, Shield, CheckCircle } from 'lucide-react';
 import API from '../services/api';
 
@@ -65,14 +66,7 @@ const UserProfile = () => {
             {/* Avatar Upload Card */}
             <div className="p-6 rounded-3xl glass-panel shadow-sm border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center">
               <div className="relative mb-4">
-                <img
-                  src={user?.avatar || '/uploads/avatars/default.png'}
-                  alt={user?.name}
-                  className="w-28 h-28 rounded-3xl object-cover ring-4 ring-medical-500/30"
-                  onError={(e) => {
-                    e.target.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.name || 'User');
-                  }}
-                />
+                <UserAvatar user={user} className="w-28 h-28 rounded-3xl" textSize="text-5xl" />
                 <label className="absolute bottom-0 right-0 p-2 rounded-xl bg-medical-600 hover:bg-medical-700 text-white cursor-pointer shadow-md transition-transform active:scale-95">
                   <Camera className="w-4 h-4" />
                   <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
